@@ -417,7 +417,9 @@ svg{display:block;flex:0 0 auto}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--brand-primary-ink);box-shadow:0 0 0 3px rgba(0,116,199,.12);outline:none}
 .formcard__submit{width:100%;height:56px;padding:0}
 .formcard__error{display:none;font-size:13px;line-height:1.5;color:#C0392B}
-.formcard__consent{font-size:11px;line-height:1.55;color:var(--ink-muted)}
+.formcard__consent{display:flex;align-items:flex-start;gap:12px}
+.formcard__checkbox{flex:0 0 18px;width:18px;height:18px;margin:2px 0 0;accent-color:var(--brand-primary-ink);cursor:pointer}
+.formcard__consent-text{font-size:11px;line-height:1.55;color:var(--ink-muted);cursor:pointer}
 .formcard__rule{height:1px;background:var(--line)}
 .next-steps{display:flex;flex-direction:column;gap:12px}
 .next-steps__label{font-size:11px;font-weight:700;letter-spacing:1.8px;line-height:1.3;color:var(--ink-muted);text-transform:uppercase}
@@ -974,9 +976,14 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <label for="f-message">Message</label>
           <textarea id="f-message" name="message" rows="4" placeholder="Tell us what bothers you most"></textarea>
         </div>
+        <div class="formcard__consent">
+          <input id="f-consent" name="newsletter" type="checkbox" class="formcard__checkbox">
+          <label for="f-consent" class="formcard__consent-text">
+            <i>By submitting this form, you agree to receive marketing text messages, alerts, and notifications from Agnes Nadrag, DDS. Message frequency may vary. Rates may be applied. You can opt out at any time by replying STOP.</i>
+          </label>
+        </div>
         <button class="btn formcard__submit" type="submit">Claim my 20% off</button>
         <div id="form-error" class="formcard__error" role="alert" aria-live="polite"></div>
-        <p class="formcard__consent">By submitting this form you agree to be contacted about your consultation. We do not add you to any marketing list. Individual results vary.</p>
         <div class="formcard__done" id="formDone">
           <b>Request received</b>
           <span>We call to confirm within one business day and hold your 20% off for that visit. If you would rather speak now, call <a href="tel:+13155955059" style="color:var(--brand-primary-ink);font-weight:700">(315) 595-5059</a>.</span>
@@ -1324,6 +1331,7 @@ document.querySelectorAll('.faq-item').forEach(item=>{
     e.preventDefault();
     showError('');
 
+    const consent = form.querySelector('#f-consent');
     const bad = fields.find(f=>!f.checkValidity());
     if(bad){
       flagField(bad,'Please fill in all required fields.');
@@ -1360,7 +1368,7 @@ document.querySelectorAll('.faq-item').forEach(item=>{
     fd.append('last_name', last_name);
     fd.append('phone', `+1${phone}`);
     fd.append('email', email);
-    fd.append('checkbox', 'on');
+    fd.append('checkbox', consent?.checked ? 'on' : '');
     fd.append('organization', 'fcc7dcd8-b10c-476a-afc2-bf928b47157a');
     fd.append('form', '573');
     fd.append('message', message);

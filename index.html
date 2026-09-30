@@ -416,6 +416,7 @@ svg{display:block;flex:0 0 auto}
 .field select:invalid{color:var(--ink-muted)}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--brand-primary-ink);box-shadow:0 0 0 3px rgba(0,116,199,.12);outline:none}
 .formcard__submit{width:100%;height:56px;padding:0}
+.formcard__error{display:none;font-size:13px;line-height:1.5;color:#C0392B}
 .formcard__consent{font-size:11px;line-height:1.55;color:var(--ink-muted)}
 .formcard__rule{height:1px;background:var(--line)}
 .next-steps{display:flex;flex-direction:column;gap:12px}
@@ -974,6 +975,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <textarea id="f-message" name="message" rows="4" placeholder="Tell us what bothers you most"></textarea>
         </div>
         <button class="btn formcard__submit" type="submit">Claim my 20% off</button>
+        <div id="form-error" class="formcard__error" role="alert" aria-live="polite"></div>
         <p class="formcard__consent">By submitting this form you agree to be contacted about your consultation. We do not add you to any marketing list. Individual results vary.</p>
         <div class="formcard__done" id="formDone">
           <b>Request received</b>
@@ -1295,27 +1297,124 @@ document.querySelectorAll('.faq-item').forEach(item=>{
 });
 
 /* ------------------------------------------------------------
-   Booking form (front end only, wire to a handler when live)
+   Booking form (posts to AEVA contacts API)
    ------------------------------------------------------------ */
-const form = document.getElementById('bookForm');
-form.addEventListener('submit',e=>{
-  e.preventDefault();
+(function(){
+  const form = document.getElementById('bookForm');
+  if(!form) return;
+  const submitBtn = form.querySelector('.formcard__submit');
+  const errEl = form.querySelector('#form-error');
   const fields = [...form.querySelectorAll('input,select,textarea')];
-  const bad = fields.find(f=>!f.checkValidity());
-  if(bad){
-    bad.focus();
-    gsap.fromTo(bad,{x:-8},{x:0,duration:.5,ease:'elastic.out(1,0.35)'});
-    bad.style.borderColor = '#C0392B';
-    bad.addEventListener('input',()=>{ bad.style.borderColor=''; },{once:true});
-    return;
+
+  function showError(msg){
+    if(!errEl) return;
+    errEl.textContent = msg;
+    errEl.style.display = msg ? 'block' : 'none';
   }
-  const done = document.getElementById('formDone');
-  done.style.display = 'flex';
-  gsap.fromTo(done,{autoAlpha:0,y:12},{autoAlpha:1,y:0,duration:.5,ease:'power3.out'});
-  form.querySelector('.formcard__submit').textContent = 'Request sent';
-  form.querySelector('.formcard__submit').disabled = true;
-  fields.forEach(f=>f.disabled = true);
-});
+
+  function flagField(el,msg){
+    showError(msg);
+    el.focus();
+    gsap.fromTo(el,{x:-8},{x:0,duration:.5,ease:'elastic.out(1,0.35)'});
+    el.style.borderColor = '#C0392B';
+    el.addEventListener('input',()=>{ el.style.borderColor=''; showError(''); },{once:true});
+  }
+
+  form.addEventListener('submit',async function(e){
+    e.preventDefault();
+    showError('');
+
+    const bad = fields.find(f=>!f.checkValidity());
+    if(bad){
+      flagField(bad,'Please fill in all required fields.');
+      return;
+    }
+
+    const first_name = form.querySelector('#f-first').value?.trim() || '';
+    const last_name  = form.querySelector('#f-last').value?.trim() || '';
+    const email      = form.querySelector('#f-email').value?.trim() || '';
+    const phoneRaw   = form.querySelector('#f-phone').value?.trim() || '';
+    const message    = form.querySelector('#f-message').value?.trim() || '';
+
+    const emailRe = /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/;
+    if(!emailRe.test(email)){
+      flagField(form.querySelector('#f-email'),'Please enter a valid email address.');
+      return;
+    }
+
+    // Accept formatted input like (315) 000-0000, normalize to 10 digits
+    let phone = phoneRaw.replace(/\D/g,'');
+    if(phone.length === 11 && phone.startsWith('1')) phone = phone.slice(1);
+    const phoneRe = /^[0-9]{10}$/;
+    if(!phoneRe.test(phone)){
+      flagField(form.querySelector('#f-phone'),'Please enter a 10-digit US phone number.');
+      return;
+    }
+
+    submitBtn.disabled = true;
+    const originalLabel = submitBtn.textContent;
+    submitBtn.textContent = 'Sending…';
+
+    const fd = new FormData();
+    fd.append('first_name', first_name);
+    fd.append('last_name', last_name);
+    fd.append('phone', `+1${phone}`);
+    fd.append('email', email);
+    fd.append('checkbox', 'on');
+    fd.append('organization', 'fcc7dcd8-b10c-476a-afc2-bf928b47157a');
+    fd.append('form', '573');
+    fd.append('message', message);
+    fd.append('form_location', window.location.href);
+
+    // Detect ad tracking params from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const trackingMap = {
+      gclid: 'google',
+      wbraid: 'google',
+      gbraid: 'google',
+      fbclid: 'meta',
+      ttclid: 'tiktok',
+    };
+    let trackingParam = '';
+    let adSource = 'other';
+    for(const [param, source] of Object.entries(trackingMap)){
+      const val = urlParams.get(param);
+      if(val){
+        trackingParam = val;
+        adSource = source;
+        break;
+      }
+    }
+    fd.append('tracking_param', trackingParam);
+    fd.append('ad_source', adSource);
+
+    try{
+      const res = await fetch(
+        'https://api.aevadigital.com/api/v1/contacts/add_contact_from_form/',
+        { method:'POST', body:fd }
+      );
+
+      if(!res.ok){
+        const txt = await res.text().catch(()=>res.statusText);
+        throw new Error(txt || 'Server error');
+      }
+
+      window.dataLayer = window.dataLayer || [];
+      window.dataLayer.push({ 'event': 'form-success' });
+
+      const done = document.getElementById('formDone');
+      done.style.display = 'flex';
+      gsap.fromTo(done,{autoAlpha:0,y:12},{autoAlpha:1,y:0,duration:.5,ease:'power3.out'});
+      submitBtn.textContent = 'Request sent';
+      fields.forEach(f=>f.disabled = true);
+    }catch(err){
+      console.error(err);
+      showError('Submission failed — please try again.');
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalLabel;
+    }
+  });
+})();
 
 /* ------------------------------------------------------------
    GSAP motion
